@@ -26,7 +26,13 @@ The original [`cyberdrop-dl`](https://github.com/jbsparrow/CyberDropDownloader) 
 
 The easiest way to run the tool is via Docker.
 
-1.  **Build the Image**:
+1.  **Clone the Repo**:
+    ```bash
+    git clone https://github.com/silenthooligan/code-sharing.git
+    cd code-sharing/cyberdrop-dl-gui
+    ```
+
+2.  **Build the Image**:
     ```bash
     docker build -t cyberdrop-dl-gui .
     ```
