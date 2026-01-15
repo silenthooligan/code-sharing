@@ -35,7 +35,7 @@ Typical downloaders fail when they encounter FlipHTML5's "Protected" mode or new
 
 1.  **Clone the Repo** (or download the scripts):
     ```bash
-    git clone https://github.com/yourusername/fliphtml5-liberator.git
+    git clone https://github.com/silenthooligan/fliphtml5-liberator.git
     cd fliphtml5-liberator
     ```
 
