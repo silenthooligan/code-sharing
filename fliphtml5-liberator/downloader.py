@@ -17,7 +17,7 @@ async def download_image(client, url, path):
     try:
         response = await client.get(url, timeout=15.0)
         response.raise_for_status()
-        with open(path, 'wb') as f:
+        with open(path, 'wb', encoding="utf-8") as f:
             f.write(response.content)
         return True
     except Exception as e:
@@ -53,7 +53,7 @@ async def download_fliphtml5(book_id: str, output_path: str):
             return
 
         config_path = os.path.join(temp_dir, "config.js")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
 
         # Run Node Decoder
@@ -148,7 +148,7 @@ async def download_fliphtml5(book_id: str, output_path: str):
             else:
                 final_images.append(img)
 
-        with open(output_path, "wb") as f:
+        with open(output_path, "wb", encoding="utf-8") as f:
             f.write(img2pdf.convert(final_images))
         
         logger.info(f"PDF Saved: {output_path}")
