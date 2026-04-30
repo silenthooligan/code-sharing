@@ -1,0 +1,54 @@
+# zwave-js-server pointed at a WiFi-portable ZWA-2.
+#
+# Drop into your Home Assistant docker-compose.yml and start with:
+#   docker compose up -d zwave-js-server
+#
+# Then in HA: Settings → Devices & Services → Z-Wave JS → server URL
+# ws://localhost:3000
+
+services:
+  zwave-js-server:
+    image: ghcr.io/kpine/zwave-js-server:latest
+    container_name: zwave-js-server
+    restart: unless-stopped
+
+    # network_mode: host required for esphome:// resolution + binding :3000.
+    # If your HA is in the same compose project, this also makes ws://
+    # localhost:3000 work from HA's perspective.
+    network_mode: host
+
+    # The kpine entrypoint validates USB_PATH as a character device, which
+    # esphome:// URLs aren't. The `server` subcommand bypasses that check and
+    # passes its args straight to zwave-server.
+    #
+    # Set to your dongle's IP — Alpine/musl has no mDNS resolver, so use the
+    # IP, not <hostname>.local. Pin it via your DHCP server.
+    command: [
+      "server",
+      "esphome://YOUR_ZWA2_IP",       # e.g. 192.0.2.14
+      "--config", "options.js",
+      "--disable-dns-sd"
+    ]
+
+    environment:
+      # CRITICAL — ZWA-2 ships set to RFRegion 11 ("USA Long Range End Device")
+      # which makes it act as an end device and refuse to run inclusion. Symptom:
+      # all 4 channels show -103 dBm noise floor with no devices visible during
+      # add_node. Override per your locale:
+      #   USA, USA (Long Range), Europe, ANZ, Israel, China, Japan, Korea, etc.
+      - RF_REGION=USA (Long Range)
+
+      # Z-Wave network security keys. Generate ONCE and store securely:
+      #   for k in S0_LEGACY S2_ACCESS_CONTROL S2_AUTHENTICATED S2_UNAUTHENTICATED \
+      #            LR_S2_ACCESS_CONTROL LR_S2_AUTHENTICATED; do
+      #     echo "${k}_KEY=$(openssl rand -hex 16 | tr a-f A-F)"
+      #   done
+      - S0_LEGACY_KEY=${ZWAVE_S0_LEGACY_KEY}
+      - S2_ACCESS_CONTROL_KEY=${ZWAVE_S2_ACCESS_CONTROL_KEY}
+      - S2_AUTHENTICATED_KEY=${ZWAVE_S2_AUTHENTICATED_KEY}
+      - S2_UNAUTHENTICATED_KEY=${ZWAVE_S2_UNAUTHENTICATED_KEY}
+      - LR_S2_ACCESS_CONTROL_KEY=${ZWAVE_LR_S2_ACCESS_CONTROL_KEY}
+      - LR_S2_AUTHENTICATED_KEY=${ZWAVE_LR_S2_AUTHENTICATED_KEY}
+
+    volumes:
+      - /your/persist/path/zwave-js:/cache

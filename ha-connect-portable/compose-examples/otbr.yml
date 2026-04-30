@@ -1,0 +1,61 @@
+# OpenThread Border Router pointed at a WiFi-portable ZBT-2 in Thread role.
+#
+# Uses ownbee/hass-otbr-docker (community OTBR for HA Container — bundles a
+# socat-otbr-tcp service that bridges NETWORK_DEVICE=<host>:<port> into a
+# local pty for otbr-agent to read as spinel+hdlc+uart://).
+#
+# Drop into your Home Assistant docker-compose.yml and start:
+#   docker compose up -d otbr
+#
+# Then in HA: Settings → Devices & Services → Open Thread Border Router →
+# URL http://127.0.0.1:8081
+
+services:
+  otbr:
+    image: ghcr.io/ownbee/hass-otbr-docker:latest
+    container_name: otbr
+    restart: unless-stopped
+
+    # IPv6 routing + tun/tap (for wpan0) — both require elevated privileges
+    privileged: true
+    network_mode: host  # mDNS / SRP multicast on the infra side
+
+    # /dev/net/tun is required for wpan0 to come up. If you're running
+    # inside a Proxmox unprivileged LXC, ALSO add to /etc/pve/lxc/<CTID>.conf:
+    #   lxc.cgroup2.devices.allow: c 10:200 rwm
+    #   lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
+    # then `pct restart <CTID>`. Without that, otbr-agent fails with
+    # "platformConfigureTunDevice() … No such file or directory" (exit 5).
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+
+    environment:
+      # Your ZBT-2 thread dongle's IP:port (the ESPHome stream_server endpoint).
+      # Pin via your DHCP server.
+      - NETWORK_DEVICE=YOUR_ZBT2_THREAD_IP:6638      # e.g. 192.0.2.15:6638
+
+      # ownbee's socat-otbr-tcp creates this pty from NETWORK_DEVICE.
+      # Their otbr-agent run script doesn't auto-set DEVICE when NETWORK_DEVICE
+      # is provided (the auto-wiring is commented out), so we set it here.
+      - DEVICE=/tmp/ttyOTBR
+      - BAUDRATE=460800
+      - FLOW_CONTROL=0
+
+      # Your LAN-side interface name (eth0 in most LXCs / containers).
+      - BACKBONE_IF=eth0
+
+      # REST API for HA's `otbr` integration.
+      - OTBR_REST_PORT=8081
+      - OTBR_WEB=0       # disable separate web UI; REST is enough for HA
+
+      - FIREWALL=1
+      - NAT64=1
+      - THREAD_1_4=1
+      - OTBR_LOG_LEVEL=info
+
+    # Persist the Thread network state so it survives container recreate.
+    # ownbee's run script symlinks /var/lib/thread → /data/thread.
+    volumes:
+      - /your/persist/path/otbr:/data

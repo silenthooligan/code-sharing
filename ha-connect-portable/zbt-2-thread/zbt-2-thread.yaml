@@ -1,5 +1,5 @@
 # Home Assistant Connect ZBT-2 — Portable Thread / OTBR firmware (community)
-# https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-zbt-2-portable
+# https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-portable
 #
 # Hardware-identical to home-assistant-zbt-2-zigbee.yaml. The differences
 # matter, though — the ZBT-2 Thread role uses oxan/esphome-stream-server

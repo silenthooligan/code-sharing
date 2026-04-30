@@ -1,0 +1,89 @@
+# Full-stack reference: Home Assistant Container + matter-server +
+# zwave-js-server (ZWA-2) + OTBR (ZBT-2 Thread). The ZBT-2 Zigbee role
+# needs no sidecar — ZHA talks to it directly via the ESPHome integration.
+#
+# Assumptions:
+#   - You've flashed all three Nabu Casa dongles with the firmwares from
+#     this repo's zwa-2/, zbt-2-thread/, zbt-2-zigbee/ directories.
+#   - Each dongle has a static DHCP reservation. Replace the YOUR_*_IP
+#     placeholders below with whatever IPs your DHCP server hands out.
+#   - Your IoT VLAN's firewall allows your HA host to reach those IPs.
+#
+# .env file should provide the ZWAVE_*_KEY values (generate with
+# `openssl rand -hex 16 | tr a-f A-F` for each).
+
+services:
+  homeassistant:
+    image: ghcr.io/home-assistant/home-assistant:stable
+    container_name: homeassistant
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /your/persist/path/homeassistant:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /run/dbus:/run/dbus:ro
+
+  # ── Matter ──────────────────────────────────────────────────────────────
+  matter-server:
+    image: ghcr.io/home-assistant-libs/python-matter-server:stable
+    container_name: matter-server
+    restart: unless-stopped
+    network_mode: host
+    command: --storage-path /data
+    security_opt:
+      - apparmor=unconfined
+    volumes:
+      - /your/persist/path/matter-server:/data
+      - /run/dbus:/run/dbus:ro
+
+  # ── Z-Wave (talks to ZWA-2 over esphome://) ─────────────────────────────
+  zwave-js-server:
+    image: ghcr.io/kpine/zwave-js-server:latest
+    container_name: zwave-js-server
+    restart: unless-stopped
+    network_mode: host
+    command: ["server", "esphome://YOUR_ZWA2_IP", "--config", "options.js", "--disable-dns-sd"]
+    environment:
+      - RF_REGION=USA (Long Range)
+      - S0_LEGACY_KEY=${ZWAVE_S0_LEGACY_KEY}
+      - S2_ACCESS_CONTROL_KEY=${ZWAVE_S2_ACCESS_CONTROL_KEY}
+      - S2_AUTHENTICATED_KEY=${ZWAVE_S2_AUTHENTICATED_KEY}
+      - S2_UNAUTHENTICATED_KEY=${ZWAVE_S2_UNAUTHENTICATED_KEY}
+      - LR_S2_ACCESS_CONTROL_KEY=${ZWAVE_LR_S2_ACCESS_CONTROL_KEY}
+      - LR_S2_AUTHENTICATED_KEY=${ZWAVE_LR_S2_AUTHENTICATED_KEY}
+    volumes:
+      - /your/persist/path/zwave-js:/cache
+
+  # ── Thread / OTBR (talks to ZBT-2-thread over raw TCP) ──────────────────
+  otbr:
+    image: ghcr.io/ownbee/hass-otbr-docker:latest
+    container_name: otbr
+    restart: unless-stopped
+    privileged: true
+    network_mode: host
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - NETWORK_DEVICE=YOUR_ZBT2_THREAD_IP:6638
+      - DEVICE=/tmp/ttyOTBR
+      - BAUDRATE=460800
+      - FLOW_CONTROL=0
+      - BACKBONE_IF=eth0
+      - OTBR_REST_PORT=8081
+      - OTBR_WEB=0
+      - FIREWALL=1
+      - NAT64=1
+      - THREAD_1_4=1
+      - OTBR_LOG_LEVEL=info
+    volumes:
+      - /your/persist/path/otbr:/data
+
+# Notes:
+# - ZBT-2 in Zigbee role needs no sidecar. After flashing zbt-2-zigbee.yaml,
+#   ZHA talks to it directly via socket://YOUR_ZBT2_ZIGBEE_IP:6638 (or
+#   esphome://<hostname>.local for newer Zigpy versions).
+# - matter-server uses whichever Thread BR is closest; once HA's `otbr`
+#   integration is added (URL http://127.0.0.1:8081), HA pushes any existing
+#   Thread credentials and our OTBR joins the mesh as a router.

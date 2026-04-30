@@ -10,11 +10,11 @@ Welcome to my digital workbench. This repository is a home for code that solves 
 
 ## 🌟 Featured Projects
 
-### [🛰️ Home Assistant Connect ZBT-2 — Portable WiFi Firmware](./ha-connect-zbt-2-portable)
-**Take the ZBT-2 off USB.**
-Community ESPHome firmware that puts the Nabu Casa ZBT-2 (Zigbee + Thread) on Wi-Fi instead of USB, plus a CLI flashing helper that doesn't need Chrome's Web Serial. Mirrors the [official ZWA-2 portable firmware](https://github.com/esphome/zwa-2) for the ZBT-2 hardware, which Nabu Casa hasn't officially published yet.
-*   **Tech Stack**: ESPHome `serial_proxy`, esptool, universal-silabs-flasher, Python.
-*   **Key Feature**: CLI bootloader-entry via the magic-baudrate `cmd>` trick — no browser required.
+### [🛰️ Home Assistant Connect — Portable WiFi Firmware (ZWA-2 + ZBT-2)](./ha-connect-portable)
+**Take both Nabu Casa dongles off USB.**
+WiFi-portable ESPHome firmware for the ZWA-2 (Z-Wave) and ZBT-2 (Zigbee + Thread/OTBR), plus full HA Container sidecar wiring (zwave-js-server, OpenThread Border Router via socat-bridged TCP). Mirrors the [official ZWA-2 portable firmware](https://github.com/esphome/zwa-2) and adds the same pattern for the ZBT-2 hardware, which Nabu Casa hasn't officially published yet.
+*   **Tech Stack**: ESPHome (`zwave_proxy`, `serial_proxy`, `stream_server`), esptool, universal-silabs-flasher, kpine/zwave-js-server, ownbee/hass-otbr-docker.
+*   **Key Features**: CLI bootloader-entry via the magic-baudrate `cmd>` trick (no browser required); ready-to-drop docker-compose snippets for the sidecars; full-stack reference example.
 
 ### [📖 FlipHTML5 Liberator](./fliphtml5-liberator)
 **Break through the "Protected" wall.**
@@ -38,7 +38,7 @@ The vault is organized by project. Each folder is a self-contained world with it
 | :--- | :--- | :--- |
 | **fliphtml5-liberator** | Universal downloader for protected FlipHTML5 books. | ✅ Stable |
 | **cyberdrop-dl-gui** | Web-based GUI for Cyberdrop-DL. | ✅ Stable |
-| **ha-connect-zbt-2-portable** | ZBT-2 over Wi-Fi (community fill-in until Nabu Casa ships official). | 🧪 Experimental |
+| **ha-connect-portable** | ZWA-2 + ZBT-2 over Wi-Fi for HA Container, with sidecar compose snippets. | 🧪 Experimental |
 | *(More coming soon)* | *Watch this space for new experiments.* | 🚧 Planned |
 
 ---

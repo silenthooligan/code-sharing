@@ -1,5 +1,5 @@
 # Home Assistant Connect ZBT-2 — Portable Zigbee firmware (community)
-# https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-zbt-2-portable
+# https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-portable
 #
 # This puts the ZBT-2 onto your Wi-Fi network so it can serve Zigbee from
 # anywhere instead of being USB-tethered to your Home Assistant host. It's

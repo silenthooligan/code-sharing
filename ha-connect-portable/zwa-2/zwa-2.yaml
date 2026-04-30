@@ -1,0 +1,148 @@
+# Home Assistant Connect ZWA-2 — Portable Z-Wave firmware (community variant)
+# https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-portable
+#
+# Structurally identical to the official upstream
+#   https://github.com/esphome/zwa-2
+# with two production-tested deviations:
+#
+#   1. NO `api: encryption:` block. Z-Wave JS does not yet implement
+#      ESPHome's noise-protocol layer, so leaving encryption on means
+#      zwave-js-server fails to connect with read ECONNRESET on every
+#      attempt. (https://github.com/home-assistant/addons/issues/4195)
+#      Mitigate by isolating the dongle on an IoT VLAN with firewall
+#      rules that only allow your HA host to reach :6053.
+#
+#   2. Custom name (`zwa-2-portable`) so multiple instances on the same
+#      LAN don't collide. Set `name_add_mac_suffix: true` for that.
+#
+# Otherwise this is the upstream ESPHome firmware verbatim — same UART
+# pins, same `zwave_proxy` component, same Bluetooth proxy + tracker
+# (which, as a nice side effect, gives HA a Bluetooth radio for Matter
+# device commissioning if your HA host doesn't have one of its own).
+#
+# Hardware: Nabu Casa Home Assistant Connect ZWA-2 (EFR32ZG23 + ESP32-S3)
+#   ESP32-S3 GPIO 14  →  ZG23 RX   (115200 baud, 8N1, no flow control)
+#   ESP32-S3 GPIO 13  ←  ZG23 TX
+#
+# Pair with Home Assistant's Z-Wave JS integration:
+#   1. Run zwave-js-server (kpine image) — see compose-examples/zwave-js-server.yml
+#   2. Add HA `zwave_js` integration → URL `ws://<your-HA-host>:3000`
+#
+# OR connect directly via esphome:// if you're using HA OS (no separate server):
+#   1. Add HA `esphome` integration to discover the dongle (encryption-free)
+#   2. Add HA `zwave_js` integration → serial port `esphome://zwa-2-portable.local`
+
+esphome:
+  name: zwa-2-portable
+  friendly_name: Home Assistant ZWA-2 (Portable)
+  min_version: 2025.12.1
+  name_add_mac_suffix: true
+  project:
+    name: silenthooligan.zwa-2-portable
+    version: "1.0.0"
+
+esp32:
+  variant: esp32s3
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  ap:
+    ssid: "ZWA-2 Setup"
+
+captive_portal:
+
+mdns:
+  services:
+    - service: "_zwave"
+      protocol: "_tcp"
+      port: 6053
+      txt:
+        protocol: "esphome"
+
+# DELIBERATELY NO `encryption:` block — see file header.
+api:
+
+logger:
+
+ota:
+  - platform: esphome
+    id: ota_esphome
+    password: !secret ota_password
+
+uart:
+  id: zg23_uart
+  tx_pin: 14
+  rx_pin: 13
+  baud_rate: 115200
+
+zwave_proxy:
+  id: zw_proxy
+
+# Bluetooth proxy + scanner — bonus feature of the ZWA-2 ESP32-S3.
+# Useful if your HA host has no Bluetooth radio (e.g. HA in a Proxmox LXC
+# without USB BT passthrough): this dongle becomes a BT proxy for Matter
+# device commissioning. Toggle on/off via the switch entity below.
+bluetooth_proxy:
+  id: zwa2_bt_proxy
+
+esp32_ble_tracker:
+  id: zwa2_ble_tracker
+
+button:
+  - platform: restart
+    id: restart_btn
+    name: Restart
+    entity_category: diagnostic
+    disabled_by_default: true
+
+switch:
+  - platform: template
+    id: bluetooth_enabled_switch
+    name: Bluetooth Proxy
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    setup_priority: 275.0
+    turn_on_action:
+      - ble.enable:
+    turn_off_action:
+      - ble.disable:
+
+select:
+  - platform: template
+    name: Bluetooth Scanner Mode
+    id: scanner_mode
+    options:
+      - "Passive"
+      - "Active"
+    lambda: |-
+      if (id(zwa2_ble_tracker).get_scan_active()) {
+        return {"Active"};
+      } else {
+        return {"Passive"};
+      }
+    set_action:
+      - lambda: |-
+          id(zwa2_bt_proxy).bluetooth_scanner_set_mode(x == "Active");
+      - component.update: scanner_mode
+
+sensor:
+  - platform: wifi_signal
+    name: WiFi Signal
+    update_interval: 60s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+      entity_category: diagnostic
