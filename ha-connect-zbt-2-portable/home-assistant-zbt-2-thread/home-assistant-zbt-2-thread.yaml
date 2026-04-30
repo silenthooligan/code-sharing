@@ -1,18 +1,33 @@
 # Home Assistant Connect ZBT-2 — Portable Thread / OTBR firmware (community)
 # https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-zbt-2-portable
 #
-# Hardware-identical to home-assistant-zbt-2-zigbee.yaml — only the EFR32MG24
-# firmware variant differs. Flash this YAML to the ESP32-S3 on a ZBT-2 whose
-# EFR32 has been reflashed with OpenThread RCP firmware (see top-level README
-# for the universal-silabs-flasher step).
+# Hardware-identical to home-assistant-zbt-2-zigbee.yaml. The differences
+# matter, though — the ZBT-2 Thread role uses oxan/esphome-stream-server
+# (raw TCP on port 6638) instead of ESPHome's `serial_proxy`. The official
+# OpenThread Border Router image expects spinel+hdlc+uart over a real UART;
+# it doesn't speak ESPHome's encrypted native API. Raw TCP can be bridged
+# into a pty by socat (or by the ownbee/hass-otbr-docker image's built-in
+# socat-otbr-tcp service that does this for you).
 #
-# Pair with Home Assistant's Thread / OTBR integration:
-#     The OTBR add-on / OpenThread Border Router service running alongside HA
-#     points its radio_url at this device. As of HA 2026.x there isn't yet a
-#     drop-in "esphome://" radio_url for OTBR (zwave_proxy and ZHA support it
-#     more directly via ESPHome native API); the workaround is socat to
-#     translate the serial_proxy TCP stream to a virtual /dev/ttyV*.
-#     See README troubleshooting for current state.
+# Companion stack on the HA host:
+#
+#   ownbee/hass-otbr-docker  — runs otbr-agent + socat-otbr-tcp + REST API
+#     env:
+#       - NETWORK_DEVICE=<this-dongle-ip>:6638
+#       - DEVICE=/tmp/ttyOTBR        # ownbee's socat creates this
+#       - BAUDRATE=460800
+#       - FLOW_CONTROL=0
+#       - BACKBONE_IF=eth0
+#     devices:
+#       - /dev/net/tun:/dev/net/tun  # required for wpan0
+#     cap_add: [NET_ADMIN]
+#     privileged: true
+#     network_mode: host
+#
+#   HA `otbr` integration → http://127.0.0.1:8081
+#
+# The EFR32MG24 must be running OpenThread RCP firmware (zbt2_openthread_rcp_*.gbl
+# from NabuCasa/silabs-firmware-builder releases). See top-level README.
 
 esphome:
   name: home-assistant-zbt-2-thread
@@ -21,7 +36,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: silenthooligan.zbt-2-thread
-    version: "1.0.0"
+    version: "1.1.0"
 
 esp32:
   variant: esp32s3
@@ -32,6 +47,11 @@ esp32:
 psram:
   mode: octal
   speed: 80MHz
+
+# oxan/esphome-stream-server — exposes UART as raw TCP for OTBR
+external_components:
+  - source: github://oxan/esphome-stream-server@master
+    components: [stream_server]
 
 wifi:
   ssid: !secret wifi_ssid
@@ -46,18 +66,18 @@ mdns:
   services:
     - service: "_serial"
       protocol: "_tcp"
-      port: 6053
+      port: 6638
       txt:
-        protocol: "esphome"
+        protocol: "spinel"
         radio: "openthread_rcp"
 
+# api: stays enabled (no encryption — keeps it compatible if you also want
+# HA's ESPHome integration to discover the dongle for diagnostic sensors).
 api:
-  encryption:
-    key: !secret api_encryption_key
 
 logger:
   level: INFO
-  baud_rate: 0
+  baud_rate: 0  # UART is dedicated to the radio
 
 ota:
   - platform: esphome
@@ -70,27 +90,44 @@ uart:
   baud_rate: 460800
   rx_buffer_size: 2048
 
-serial_proxy:
-  name: "MG24 OpenThread RCP"
-  port_type: TTL
+# Raw TCP UART proxy on port 6638. OTBR connects via TCP; socat bridges
+# the TCP stream into a pty that otbr-agent reads as spinel+hdlc+uart.
+stream_server:
   uart_id: mg24_uart
-  rts_pin:
-    number: 4
-    inverted: true
-    mode:
-      output: true
-      open_drain: true
-  dtr_pin:
-    number: 10
-    inverted: true
-    mode:
-      output: true
+  port: 6638
+
+# Expose EFR32 reset + bootloader pins as outputs so OTA / firmware swaps
+# can drive them remotely if needed.
+output:
+  - platform: gpio
+    id: mg24_reset
+    pin:
+      number: 4
+      mode:
+        output: true
+        open_drain: true
+      inverted: true
+  - platform: gpio
+    id: mg24_btl
+    pin:
+      number: 10
+      mode:
+        output: true
+      inverted: true
 
 button:
   - platform: restart
+    id: restart_btn
     name: Restart
     entity_category: diagnostic
     disabled_by_default: true
+  - platform: template
+    name: Reset MG24 Radio
+    entity_category: diagnostic
+    on_press:
+      - output.turn_on: mg24_reset
+      - delay: 100ms
+      - output.turn_off: mg24_reset
 
 sensor:
   - platform: wifi_signal
