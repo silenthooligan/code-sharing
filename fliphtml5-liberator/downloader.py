@@ -53,7 +53,7 @@ async def download_fliphtml5(book_id: str, output_path: str):
             return
 
         config_path = os.path.join(temp_dir, "config.js")
-        with open(config_path, "w") as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
 
         # Run Node Decoder
