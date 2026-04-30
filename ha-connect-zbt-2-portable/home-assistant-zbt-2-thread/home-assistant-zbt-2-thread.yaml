@@ -1,0 +1,105 @@
+# Home Assistant Connect ZBT-2 — Portable Thread / OTBR firmware (community)
+# https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-zbt-2-portable
+#
+# Hardware-identical to home-assistant-zbt-2-zigbee.yaml — only the EFR32MG24
+# firmware variant differs. Flash this YAML to the ESP32-S3 on a ZBT-2 whose
+# EFR32 has been reflashed with OpenThread RCP firmware (see top-level README
+# for the universal-silabs-flasher step).
+#
+# Pair with Home Assistant's Thread / OTBR integration:
+#     The OTBR add-on / OpenThread Border Router service running alongside HA
+#     points its radio_url at this device. As of HA 2026.x there isn't yet a
+#     drop-in "esphome://" radio_url for OTBR (zwave_proxy and ZHA support it
+#     more directly via ESPHome native API); the workaround is socat to
+#     translate the serial_proxy TCP stream to a virtual /dev/ttyV*.
+#     See README troubleshooting for current state.
+
+esphome:
+  name: home-assistant-zbt-2-thread
+  friendly_name: Home Assistant ZBT-2 (Thread)
+  min_version: 2026.3.0
+  name_add_mac_suffix: true
+  project:
+    name: silenthooligan.zbt-2-thread
+    version: "1.0.0"
+
+esp32:
+  variant: esp32s3
+  flash_size: 8MB
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  power_save_mode: none
+  ap:
+    ssid: "ZBT-2 Thread Setup"
+
+captive_portal:
+
+mdns:
+  services:
+    - service: "_serial"
+      protocol: "_tcp"
+      port: 6053
+      txt:
+        protocol: "esphome"
+        radio: "openthread_rcp"
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+logger:
+  level: INFO
+  baud_rate: 0
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+uart:
+  id: mg24_uart
+  tx_pin: 14
+  rx_pin: 13
+  baud_rate: 460800
+  rx_buffer_size: 2048
+
+serial_proxy:
+  name: "MG24 OpenThread RCP"
+  port_type: TTL
+  uart_id: mg24_uart
+  rts_pin:
+    number: 4
+    inverted: true
+    mode:
+      output: true
+      open_drain: true
+  dtr_pin:
+    number: 10
+    inverted: true
+    mode:
+      output: true
+
+button:
+  - platform: restart
+    name: Restart
+    entity_category: diagnostic
+    disabled_by_default: true
+
+sensor:
+  - platform: wifi_signal
+    name: WiFi Signal
+    update_interval: 60s
+    entity_category: diagnostic
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      name: IP Address
+      entity_category: diagnostic

@@ -22,6 +22,12 @@ A modern, web-based graphical interface for the powerful `cyberdrop-dl` tool, fe
 *   **Tech Stack**: Python, Streamlit, Docker.
 *   **Key Feature**: Real-time log parsing and visual feedback loop.
 
+### [🛰️ Home Assistant Connect ZBT-2 — Portable WiFi Firmware](./ha-connect-zbt-2-portable)
+**Take the ZBT-2 off USB.**
+Community ESPHome firmware that puts the Nabu Casa ZBT-2 (Zigbee + Thread) on Wi-Fi instead of USB, plus a CLI flashing helper that doesn't need Chrome's Web Serial. Mirrors the [official ZWA-2 portable firmware](https://github.com/esphome/zwa-2) for the ZBT-2 hardware, which Nabu Casa hasn't officially published yet.
+*   **Tech Stack**: ESPHome `serial_proxy`, esptool, universal-silabs-flasher, Python.
+*   **Key Feature**: CLI bootloader-entry via the magic-baudrate `cmd>` trick — no browser required.
+
 ---
 
 ## 📂 Repository Structure
@@ -32,6 +38,7 @@ The vault is organized by project. Each folder is a self-contained world with it
 | :--- | :--- | :--- |
 | **fliphtml5-liberator** | Universal downloader for protected FlipHTML5 books. | ✅ Stable |
 | **cyberdrop-dl-gui** | Web-based GUI for Cyberdrop-DL. | ✅ Stable |
+| **ha-connect-zbt-2-portable** | ZBT-2 over Wi-Fi (community fill-in until Nabu Casa ships official). | 🧪 Experimental |
 | *(More coming soon)* | *Watch this space for new experiments.* | 🚧 Planned |
 
 ---

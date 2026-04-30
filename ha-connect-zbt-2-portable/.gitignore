@@ -1,0 +1,8 @@
+# ESPHome build dirs
+**/.esphome/
+# Per-device secrets (copy from secrets.yaml.example)
+secrets.yaml
+**/secrets.yaml
+# Downloaded EFR32 firmware artifacts
+firmware/
+*.gbl
