@@ -9,9 +9,9 @@ OpenThread Border Router) needed to make them useful in a Home Assistant
 
 | Dongle | Role | Upstream availability | This repo |
 |---|---|---|---|
-| **ZWA-2** | Z-Wave 800 controller | ✅ Official: [`esphome/zwa-2`](https://github.com/esphome/zwa-2) | Variant with two production-tested deltas (encryption-off for Z-Wave JS compat, MAC-suffixed name) |
-| **ZBT-2** | Zigbee NCP | ❌ Not yet shipped by Nabu Casa | ESPHome `serial_proxy` — works with ZHA's adapter (HA 2026.3+) |
-| **ZBT-2** | Thread / OTBR | ❌ Not yet shipped by Nabu Casa | ESPHome `stream_server` (raw TCP) → bridged to OTBR via `socat` |
+| **ZWA-2** | Z-Wave 800 controller | ✅ Official: [`esphome/zwa-2`](https://github.com/esphome/zwa-2) | Variant with two production-tested deltas (encryption-off for Z-Wave JS compat, MAC-suffixed name). Uses official `zwave_proxy`; Z-Wave JS speaks `esphome://` natively. |
+| **ZBT-2** | Zigbee NCP | ❌ Not yet shipped by Nabu Casa | ESPHome `stream_server` (raw TCP on :6638). ZHA connects via `socket://<host>:6638`. |
+| **ZBT-2** | Thread / OTBR | ❌ Not yet shipped by Nabu Casa | ESPHome `stream_server` (raw TCP on :6638) → bridged to OTBR via `socat` (built into the ownbee image). |
 
 **This is a stop-gap.** If Nabu Casa ships official portable firmware for
 the ZBT-2, prefer that. The ZBT-2 hardware has the ESP32-S3 already
@@ -34,7 +34,7 @@ ha-connect-portable/
 │   └── zwa-2.yaml                    # ESPHome config (zwave_proxy, no encryption)
 ├── zbt-2-zigbee/
 │   ├── README.md                     # Zigbee role bring-up + ZHA wiring
-│   └── zbt-2-zigbee.yaml             # ESPHome config (serial_proxy, encrypted API)
+│   └── zbt-2-zigbee.yaml             # ESPHome config (stream_server, raw TCP)
 ├── zbt-2-thread/
 │   ├── README.md                     # Thread/OTBR bring-up + sidecar wiring
 │   └── zbt-2-thread.yaml             # ESPHome config (stream_server, raw TCP)
@@ -56,38 +56,38 @@ The right ESPHome component to use depends on what speaks to the radio:
 | Component | Transport | Used by |
 |---|---|---|
 | **`zwave_proxy`** (official) | ESPHome native API (encrypted optional) | Z-Wave JS server's `esphome://` URL handler (zwave-js v15.15.0+) |
-| **`serial_proxy`** (official, 2026.3.0+) | ESPHome native API (encrypted optional) | ZHA's serial_proxy adapter |
-| **`stream_server`** ([oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server)) | Raw TCP on a port | Anything that wants plain serial-over-TCP — e.g. OTBR (via socat-bridged pty) |
+| **`serial_proxy`** (official, 2026.3.0+) | ESPHome native API (encrypted optional) | Future: ZHA's serial_proxy adapter once HA's auto-discovery glue lands. *Not used in this repo's current YAMLs* — ZHA's manual flow only takes `socket://` URLs in HA 2026.4.x. |
+| **`stream_server`** ([oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server)) | Raw TCP on a port | Both ZBT-2 roles in this repo — Zigbee (ZHA via `socket://`) and Thread (OTBR via socat-bridged pty). |
 
 ```
 HA Container host
 ┌──────────────────────────────────────────────────────────────────┐
 │  homeassistant   matter-server   zwave-js-server   otbr           │
 │        │              │                │             │            │
-│        │              │                │ esphome://  │ HTTP :8081 │
-│        │              │                │             │            │
-│        └─── ESPHome integration (serial_proxy adapter for ZHA) ──┐│
-└────────────────────────────────────────────────────────────────┐ ││
-                            │                                    │ ││
-                            │ Wi-Fi (your IoT VLAN)              │ ││
-        ┌───────────────────┼────────────┬───────────────────────┘ ││
-        │                   │            │                          ││
-        ▼                   ▼            ▼                          ▼▼
-  ┌──────────┐        ┌──────────┐ ┌──────────────┐         ┌──────────────┐
-  │ ZWA-2    │        │ ZBT-2 #1 │ │ ZBT-2 #2     │         │ ZBT-2 #2     │
-  │ ESPHome  │        │ ESPHome  │ │ ESPHome      │ TCP 6638│ ESPHome      │
-  │ zwave_   │        │ serial_  │ │ stream_      │ ────────│ stream_      │
-  │ proxy    │        │ proxy    │ │ server       │         │ server       │
-  └────┬─────┘        └────┬─────┘ └──────┬───────┘         └──────┬───────┘
-       │                   │              │                         │
-   EFR32ZG23           EFR32MG24        EFR32MG24                 (above)
-   Z-Wave 800          Zigbee NCP    OpenThread RCP
+│        │              │     esphome:// │             │ HTTP :8081 │
+│        │ socket://    │ ─────────────► │             │            │
+│        │ :6638 (ZHA)  │                │ ─────► ZWA-2│ socat-otbr │
+│        │              │                │             │ -tcp ─────┐│
+└────────┼──────────────┼────────────────┼─────────────┼───────────┘│
+         │ socket://    │                │             │ TCP :6638  │
+         │ <ip>:6638    │                │             │            │
+         ▼              ▼                ▼             ▼            ▼
+  ┌──────────────┐  (zigpy native    ┌──────────┐   ┌──────────────┐
+  │ ZBT-2        │   socket          │ ZWA-2    │   │ ZBT-2        │
+  │ ESPHome      │   client)         │ ESPHome  │   │ ESPHome      │
+  │ stream_      │                   │ zwave_   │   │ stream_      │
+  │ server       │                   │ proxy    │   │ server       │
+  └──────┬───────┘                   └────┬─────┘   └──────┬───────┘
+         │ UART 460800                    │ UART 115200    │ UART 460800
+         ▼                                ▼                ▼
+   EFR32MG24                          EFR32ZG23        EFR32MG24
+   Zigbee NCP                         Z-Wave 800     OpenThread RCP
 ```
 
-The ZBT-2 in Thread role is shown twice in the diagram only because the
-TCP path goes through `socat-otbr-tcp` (a service inside the OTBR
-container) which exposes `/tmp/ttyOTBR` for `otbr-agent` to read as
-`spinel+hdlc+uart://`.
+Both ZBT-2 roles use raw TCP (`stream_server` :6638) on the dongle
+side; only the EFR32 firmware variant differs. The ZWA-2 keeps the
+official `zwave_proxy` because Z-Wave JS speaks `esphome://`
+natively — no TCP intermediary needed there.
 
 ## Quick start
 
@@ -170,8 +170,8 @@ For HA Container deployments (no HassOS), each role has a sidecar:
 
 | Role | Container | Talks to dongle via |
 |---|---|---|
-| Z-Wave (ZWA-2) | [`ghcr.io/kpine/zwave-js-server`](https://github.com/kpine/zwave-js-server-docker) | `esphome://<host>` (built-in) |
-| Zigbee (ZBT-2) | *(none — ZHA built into HA)* | `socket://<host>:6638` |
+| Z-Wave (ZWA-2) | [`ghcr.io/kpine/zwave-js-server`](https://github.com/kpine/zwave-js-server-docker) | `esphome://<host>` (built-in zwave-js v15.15.0+ driver) |
+| Zigbee (ZBT-2) | *(none — ZHA built into HA)* | `socket://<host>:6638` (raw TCP from `stream_server`) |
 | Thread (ZBT-2) | [`ghcr.io/ownbee/hass-otbr-docker`](https://github.com/ownbee/hass-otbr-docker) | `NETWORK_DEVICE=<host>:6638` → built-in `socat-otbr-tcp` → `/tmp/ttyOTBR` |
 
 See [`compose-examples/`](compose-examples/) for ready-to-use snippets.

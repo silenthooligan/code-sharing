@@ -6,9 +6,18 @@ hardware, which Nabu Casa hasn't shipped portable firmware for yet.
 
 The EFR32MG24 stays on its factory **Zigbee NCP** firmware — no
 SiLabs-side reflash needed for the Zigbee role. The ESP32-S3 runs
-ESPHome's official `serial_proxy` component (added 2026.3.0) which
-exposes the EFR32 UART through ESPHome's native API. ZHA understands
-this directly via its serial_proxy adapter.
+ESPHome with [`oxan/esphome-stream-server`](https://github.com/oxan/esphome-stream-server)
+which exposes the EFR32 UART as raw TCP on port 6638. ZHA connects
+via `socket://<host>:6638`.
+
+> **Note on `serial_proxy` vs `stream_server`:** ESPHome 2026.3.0 added
+> `serial_proxy` (encrypted ESPHome native API) which is the *prettier*
+> path on paper — but as of HA 2026.4.x the auto-discovery glue from
+> `serial_proxy` to ZHA isn't firing, and ZHA's manual flow only
+> accepts `socket://`-style URLs. `stream_server` exposes the UART as
+> plain TCP, which ZHA accepts directly. We pick the path that ships
+> today; expect this to switch back to `serial_proxy` once the upstream
+> discovery glue lands.
 
 ## Bring-up
 
@@ -37,8 +46,9 @@ esptool --port /dev/ttyACM0 --chip esp32s3 \
     0x10000 firmware.bin
 ```
 
-After hard-reset the dongle joins WiFi within ~10s. Subsequent updates
-go OTA via `esphome run zbt-2-zigbee.yaml --device <hostname>.local`.
+After hard-reset the dongle joins WiFi within ~10s, exposes raw TCP
+on port 6638, and announces via mDNS. Subsequent updates go OTA via
+`esphome run zbt-2-zigbee.yaml --device <hostname>.local`.
 
 ## Optional: refresh the EFR32 Zigbee firmware
 
@@ -57,21 +67,23 @@ has the stock USB-CDC bridge firmware which exposes the EFR32 directly).
 
 ## Wiring into Home Assistant
 
-No sidecar container needed — ZHA's adapter speaks ESPHome's native API:
+1. **(Optional but recommended) Settings → Devices & Services → Add
+   Integration → ESPHome.** Enter the device hostname or IP. This
+   surfaces diagnostic sensors (WiFi signal, IP address) under the
+   ESPHome integration. The ZHA path is independent.
 
-1. **Settings → Devices & Services → Add Integration → ESPHome.** Enter
-   the device hostname or IP. Paste the API encryption key from
-   `secrets.yaml`. The dongle and its diagnostic sensors appear under the
-   ESPHome integration.
+2. **Settings → Devices & Services → Add Integration → ZHA → Manually
+   enter your settings:**
+   - Radio type: **EZSP** (Silicon Labs EmberZNet)
+   - Serial port: `socket://<device-ip>:6638`
+   - Baudrate: `460800`
+   - Flow control: `software`
 
-2. **Settings → Devices & Services → Add Integration → Zigbee Home
-   Automation.** Pick *Manually enter your settings*, set radio type to
-   **EZSP**, and enter the serial port path:
-   ```
-   socket://<device-ip>:6638
-   ```
-   (or `esphome://<hostname>.local` if your Zigpy version supports it
-   natively — newer versions do).
+   ZHA forms a fresh Zigbee network. (You're not migrating an existing
+   network — Zigbee re-pair is per-device.)
+
+3. **Add Zigbee devices** via ZHA's add-device UI. Each device's
+   pairing gesture varies (button-hold, magnet swipe, paddle taps).
 
 ## Hardware reference
 
@@ -82,13 +94,21 @@ No sidecar container needed — ZHA's adapter speaks ESPHome's native API:
 | 4  | RESETn  | Radio reset (active LOW, open-drain) |
 | 10 | PA6     | Radio bootloader trigger (active LOW) |
 
-UART runs at **460,800 baud, 8N1** (different from ZWA-2's 115,200).
+UART runs at **460,800 baud, 8N1**.
 
 Pinout source: [`NabuCasa/zwave-esp-bridge` branch `puddly/zbt2-final`](https://github.com/NabuCasa/zwave-esp-bridge/tree/puddly/zbt2-final).
 
-## Why ESPHome encryption stays ON for Zigbee
+## Why no encryption?
 
-ZHA's `serial_proxy` adapter understands ESPHome's noise-protocol PSK
-natively. Unlike the ZWA-2 (which talks to zwave-js-server, which
-doesn't), there's no reason to disable it. The Zigbee radio + your
-encryption key are both protected end-to-end.
+`stream_server` is a separate, plain-TCP listener that doesn't go
+through ESPHome's encrypted native API. Raw TCP on `:6638` is ZHA's
+only entry point; encryption would need to be configured in socat /
+ZHA / zigpy.
+
+This is fine in practice if your IoT VLAN is firewalled (only your HA
+host can reach `:6638`), which is good hygiene for IoT anyway.
+
+The ESPHome `api:` block stays enabled (no encryption) so HA's ESPHome
+integration can still discover the diagnostic sensors. The two
+listeners are independent: ESPHome native API on `:6053`, raw Zigbee
+UART on `:6638`.
