@@ -16,10 +16,19 @@ OpenThread Border Router) needed to make them useful in a Home Assistant
 **This is a stop-gap.** If Nabu Casa ships official portable firmware for
 the ZBT-2, prefer that. The ZBT-2 hardware has the ESP32-S3 already
 on-board; this repo just provides the firmware that turns it on. All
-three patterns have been verified end-to-end against a Home Assistant
-Container deployment — devices included on the Z-Wave network, Thread
-nodes paired through HA's own OTBR (joining an existing mesh as a
-secondary router, or forming a new one).
+three patterns are verified end-to-end against a Home Assistant Container
+deployment:
+
+- **Z-Wave (ZWA-2):** devices included via S2 Authenticated, control +
+  state round-trips through Z-Wave JS over `esphome://`.
+- **Zigbee (ZBT-2):** ZHA forms its mesh against the dongle over
+  `socket://<host>:6638`; battery-powered IAS-Zone end devices (water
+  leak sensors) and mains-powered routers join, report attributes
+  (battery %, temperature, moisture state), and trigger HA automations.
+- **Thread (ZBT-2):** HA's OTBR joins an existing Thread mesh as a
+  secondary border router (or forms a new one) and routes Matter traffic
+  to existing nodes; mainline OTBR's `socat`-bridged pty is stable
+  across container restarts.
 
 ## What's in this directory
 

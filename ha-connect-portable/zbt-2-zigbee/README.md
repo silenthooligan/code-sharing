@@ -10,6 +10,14 @@ ESPHome with [`oxan/esphome-stream-server`](https://github.com/oxan/esphome-stre
 which exposes the EFR32 UART as raw TCP on port 6638. ZHA connects
 via `socket://<host>:6638`.
 
+**Verified end-to-end:** ZHA forms a fresh mesh on this dongle, IAS-Zone
+battery-powered end devices (water-leak sensors) and mains-powered
+routers (Zigbee repeaters) join via permit-join, the device interview
+completes, and ongoing attribute reports (battery %, temperature,
+moisture state) flow into HA without dropping the TCP socket. Sustained
+operation across HA restarts and dongle reboots; `socket://` reconnects
+cleanly.
+
 > **Note on `serial_proxy` vs `stream_server`:** ESPHome 2026.3.0 added
 > `serial_proxy` (encrypted ESPHome native API) which is the *prettier*
 > path on paper — but as of HA 2026.4.x the auto-discovery glue from
