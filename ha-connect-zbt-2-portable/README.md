@@ -8,8 +8,7 @@
 >
 > The architecture has been proven end-to-end against a Home Assistant
 > Container deployment driving an OpenThread Border Router on the dongle's
-> Thread radio (Aperture Labs production homelab — Nest Hubs demoted to
-> secondary BRs on the same Thread mesh). Issues / PRs welcome.
+> Thread radio. Issues / PRs welcome.
 >
 > If/when Nabu Casa publishes official portable ZBT-2 firmware, prefer that.
 
