@@ -10,6 +10,12 @@ Welcome to my digital workbench. This repository is a home for code that solves 
 
 ## 🌟 Featured Projects
 
+### [🛰️ Home Assistant Connect ZBT-2 — Portable WiFi Firmware](./ha-connect-zbt-2-portable)
+**Take the ZBT-2 off USB.**
+Community ESPHome firmware that puts the Nabu Casa ZBT-2 (Zigbee + Thread) on Wi-Fi instead of USB, plus a CLI flashing helper that doesn't need Chrome's Web Serial. Mirrors the [official ZWA-2 portable firmware](https://github.com/esphome/zwa-2) for the ZBT-2 hardware, which Nabu Casa hasn't officially published yet.
+*   **Tech Stack**: ESPHome `serial_proxy`, esptool, universal-silabs-flasher, Python.
+*   **Key Feature**: CLI bootloader-entry via the magic-baudrate `cmd>` trick — no browser required.
+
 ### [📖 FlipHTML5 Liberator](./fliphtml5-liberator)
 **Break through the "Protected" wall.**
 A robust tool designed to decrypt and download FlipHTML5 books, even those protected by complex WebAssembly (WASM) encryption and nested obfuscation.
@@ -21,12 +27,6 @@ A robust tool designed to decrypt and download FlipHTML5 books, even those prote
 A modern, web-based graphical interface for the powerful `cyberdrop-dl` tool, featuring live progress tracking and Docker support.
 *   **Tech Stack**: Python, Streamlit, Docker.
 *   **Key Feature**: Real-time log parsing and visual feedback loop.
-
-### [🛰️ Home Assistant Connect ZBT-2 — Portable WiFi Firmware](./ha-connect-zbt-2-portable)
-**Take the ZBT-2 off USB.**
-Community ESPHome firmware that puts the Nabu Casa ZBT-2 (Zigbee + Thread) on Wi-Fi instead of USB, plus a CLI flashing helper that doesn't need Chrome's Web Serial. Mirrors the [official ZWA-2 portable firmware](https://github.com/esphome/zwa-2) for the ZBT-2 hardware, which Nabu Casa hasn't officially published yet.
-*   **Tech Stack**: ESPHome `serial_proxy`, esptool, universal-silabs-flasher, Python.
-*   **Key Feature**: CLI bootloader-entry via the magic-baudrate `cmd>` trick — no browser required.
 
 ---
 
