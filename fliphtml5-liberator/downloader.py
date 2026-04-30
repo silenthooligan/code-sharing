@@ -1,6 +1,7 @@
 import httpx
 import img2pdf
 import os
+import re
 import tempfile
 import asyncio
 import logging
@@ -12,6 +13,36 @@ from PIL import Image
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
+
+
+def try_extract_plain_pages(js_text: str):
+    """
+    Some FlipHTML5 books expose their page list directly in config.js
+    instead of an encrypted blob that requires the WASM decoder. When
+    that's the case we can skip Node entirely. Returns a list of page
+    dicts on success, or None to signal "fall back to the WASM decoder."
+    """
+    m = re.search(r"fliphtml5_pages\s*=\s*(\[[\s\S]*?\])\s*;", js_text)
+    if not m:
+        return None
+    raw = m.group(1)
+    try:
+        # JS object literals -> JSON. Quote bare keys, then swap
+        # single-quoted strings for double-quoted ones.
+        normalized = re.sub(
+            r"([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)\s*:",
+            r'\1"\2":',
+            raw,
+        )
+        normalized = re.sub(
+            r"'([^'\\]*(?:\\.[^'\\]*)*)'",
+            r'"\1"',
+            normalized,
+        )
+        parsed = json.loads(normalized)
+        return parsed if isinstance(parsed, list) and parsed else None
+    except Exception:
+        return None
 
 async def download_image(client, url, path):
     try:
@@ -56,30 +87,39 @@ async def download_fliphtml5(book_id: str, output_path: str):
         with open(config_path, "w", encoding="utf-8") as f:
             f.write(config_content)
 
-        # Run Node Decoder
-        decoder_script = Path("fliphtml5_decoder.js").absolute()
-        if not decoder_script.exists():
-            logger.error("fliphtml5_decoder.js not found in current directory.")
-            return
+        # Fast path: many books expose pages plainly and don't need the
+        # WASM decoder (or Node at all). Try that first.
+        book_data = None
+        plain_pages = try_extract_plain_pages(config_content)
+        if plain_pages:
+            logger.info("Plain config detected — skipping WASM decoder.")
+            book_data = {"fliphtml5_pages": plain_pages}
 
-        logger.info("Running WASM decoder...")
-        try:
-            result = subprocess.run(
-                ["node", str(decoder_script), config_path],
-                capture_output=True, text=True, check=True
-            )
-            raw_json = result.stdout.strip()
-            # Clean preamble
-            start = raw_json.find('{')
-            end = raw_json.rfind('}')
-            if start != -1 and end != -1:
-                raw_json = raw_json[start:end+1]
-            
-            book_data = json.loads(raw_json)
-        except Exception as e:
-            logger.error(f"Decoding failed: {e}")
-            if hasattr(e, 'stderr'): logger.error(e.stderr)
-            return
+        if book_data is None:
+            # Run Node Decoder
+            decoder_script = Path("fliphtml5_decoder.js").absolute()
+            if not decoder_script.exists():
+                logger.error("fliphtml5_decoder.js not found in current directory.")
+                return
+
+            logger.info("Running WASM decoder...")
+            try:
+                result = subprocess.run(
+                    ["node", str(decoder_script), config_path],
+                    capture_output=True, text=True, check=True
+                )
+                raw_json = result.stdout.strip()
+                # Clean preamble
+                start = raw_json.find('{')
+                end = raw_json.rfind('}')
+                if start != -1 and end != -1:
+                    raw_json = raw_json[start:end+1]
+
+                book_data = json.loads(raw_json)
+            except Exception as e:
+                logger.error(f"Decoding failed: {e}")
+                if hasattr(e, 'stderr'): logger.error(e.stderr)
+                return
 
         # Parse Pages
         pages = book_data.get('fliphtml5_pages') or book_data.get('pages')
