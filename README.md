@@ -22,11 +22,11 @@ A robust tool designed to decrypt and download FlipHTML5 books, even those prote
 *   **Tech Stack**: Python, Node.js, WASM Reverse Engineering.
 *   **Key Feature**: Hybrid decoding architecture that patches Emscripten binaries on the fly.
 
-### [📡 Cyberdrop-DL GUI](./cyberdrop-dl-gui)
+### [📡 Cyberdrop-DL + YT-DLP GUI](./cyberdrop-dl-gui)
 **The Visual Downloader.**
-A modern, web-based graphical interface for the powerful `cyberdrop-dl` tool, featuring live progress tracking and Docker support.
-*   **Tech Stack**: Python, Streamlit, Docker.
-*   **Key Feature**: Real-time log parsing and visual feedback loop.
+A modern, web-based graphical interface that wraps **both** `cyberdrop-dl` (forums/albums/file hosts) and `yt-dlp` (video sites), with auto-routing based on URL.
+*   **Tech Stack**: Python, Streamlit, Docker, ffmpeg, aria2.
+*   **Key Feature**: Dual-engine auto-detect, library-style folder picker, live log parsing.
 
 ---
 
@@ -37,7 +37,7 @@ The vault is organized by project. Each folder is a self-contained world with it
 | Project | Description | Status |
 | :--- | :--- | :--- |
 | **fliphtml5-liberator** | Universal downloader for protected FlipHTML5 books. | ✅ Stable |
-| **cyberdrop-dl-gui** | Web-based GUI for Cyberdrop-DL. | ✅ Stable |
+| **cyberdrop-dl-gui** | Web-based GUI for Cyberdrop-DL + YT-DLP, with auto-routing. | ✅ Stable |
 | **ha-connect-portable** | ZWA-2 + ZBT-2 over Wi-Fi for HA Container, with sidecar compose snippets. | 🧪 Experimental |
 | *(More coming soon)* | *Watch this space for new experiments.* | 🚧 Planned |
 

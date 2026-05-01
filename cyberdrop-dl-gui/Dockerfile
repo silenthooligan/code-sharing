@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y \
     procps \
     curl \
     iputils-ping \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the tool and Streamlit
-RUN pip install --no-cache-dir cyberdrop-dl-patched streamlit requests beautifulsoup4
+RUN pip install --no-cache-dir cyberdrop-dl-patched streamlit requests beautifulsoup4 yt-dlp
 
 EXPOSE 8501
 WORKDIR /app

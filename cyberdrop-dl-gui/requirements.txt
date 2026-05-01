@@ -2,3 +2,4 @@ cyberdrop-dl-patched
 streamlit
 requests
 beautifulsoup4
+yt-dlp
