@@ -1,4 +1,4 @@
-# Home Assistant Connect ZBT-2 - Portable Zigbee firmware (community)
+# Home Assistant Connect ZBT-2 — Portable Zigbee firmware (community)
 # https://github.com/silenthooligan/code-sharing/tree/main/ha-connect-portable
 #
 # This puts the ZBT-2 onto your Wi-Fi network so it can serve Zigbee from
@@ -6,40 +6,37 @@
 # the ZBT-2 analogue of esphome/zwa-2 (which already exists for ZWA-2 but
 # not yet for ZBT-2 as of April 2026).
 #
-# Pair with Home Assistant's ZHA integration (HA 2026.5+):
-#     Settings -> Devices & Services -> Add Integration -> ZHA
-#     Pick the ESPHome serial proxy named "MG24 Zigbee NCP" from the
-#     serial-port picker. Or enter the URL manually:
-#       esphome-hass://esphome/<esphome_config_entry_id>?port_name=MG24%20Zigbee%20NCP
-#
-# Pre-2026.5 fallback: legacy-stream-server/zbt-2-zigbee.yaml ships the
-# raw-TCP `stream_server` variant for HA versions that lack the
-# `esphome-hass://` URL handler.
+# Pair with Home Assistant's ZHA integration:
+#     Settings → Devices & Services → Add Integration → ZHA
+#       Radio:        EZSP (Silicon Labs EmberZNet)
+#       Serial port:  socket://<device-ip>:6638
+#       Baudrate:     460800
+#       Flow control: software
 #
 # HARDWARE: Nabu Casa Home Assistant Connect ZBT-2 (EFR32MG24 + ESP32-S3)
-#   ESP32-S3 GPIO 14 -> MG24 RX
-#   ESP32-S3 GPIO 13 <- MG24 TX
-#   ESP32-S3 GPIO  4 -> MG24 RESET (active LOW, open-drain)
-#   ESP32-S3 GPIO 10 -> MG24 BTL   (active LOW)
+#   ESP32-S3 GPIO 14 → MG24 RX
+#   ESP32-S3 GPIO 13 ← MG24 TX
+#   ESP32-S3 GPIO  4 → MG24 RESET (active LOW, open-drain)
+#   ESP32-S3 GPIO 10 → MG24 BTL   (active LOW)
 #   UART: 460800 8N1
 #
 # Pin map source: NabuCasa/zwave-esp-bridge branch puddly/zbt2-final
-# (same ESP32-S3 <-> EFR32 wiring as the ZWA-2; only the EFR32 chip differs).
+# (same ESP32-S3 ↔ EFR32 wiring as the ZWA-2; only the EFR32 chip differs).
 #
-# WHY serial_proxy: ESPHome 2026.3.0+ ships first-party `serial_proxy`
-# that transports UART bytes inside the encrypted ESPHome native API.
-# HA 2026.5+ registers an `esphome-hass://` URI handler in serialx that
-# zigpy/bellows can consume. Versus the prior `stream_server` raw-TCP
-# pattern, this gives:
-#   - noise-protocol encryption on the wire
-#   - single listener on :6053 (no separate :6638 plain TCP socket)
-#   - first-party component (drops the oxan/esphome-stream-server dep)
-#   - same model as the ZWA-2's `zwave_proxy`
-#
-# Validated end-to-end on HA 2026.5.0b2 + a vendored bellows patch
-# (zigpy/bellows#720, gates Python 3.14 + EZSP-over-TCP). Stock bellows
-# in HA 2026.5.0b2 is broken on this combo until #720 lands; see the
-# top-level README.md "Status & dependencies" section.
+# WHY stream_server (raw TCP) INSTEAD OF serial_proxy (encrypted ESPHome
+# native API): HA's ZHA manual config flow only accepts /dev/tty* or
+# socket:// host:port. The HA-ESPHome-serial_proxy → ZHA discovery glue
+# isn't auto-firing in HA 2026.4.x — submitting `socket://<ip>:6638`
+# rejects with `cannot_connect` against serial_proxy because the
+# encrypted native API doesn't speak raw TCP. stream_server exposes the
+# UART as raw TCP on :6638 directly, which ZHA accepts via the standard
+# `socket://` path. Same proven pattern used for the Thread role.
+# ESPHome's `api:` block stays enabled (no encryption) so HA's ESPHome
+# integration still discovers diagnostic sensors (WiFi RSSI, IP).
+
+external_components:
+  - source: github://oxan/esphome-stream-server@master
+    components: [stream_server]
 
 esphome:
   name: home-assistant-zbt-2-zigbee
@@ -48,7 +45,7 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: silenthooligan.zbt-2-zigbee
-    version: "2.0.0"
+    version: "1.1.0"
 
 esp32:
   variant: esp32s3
@@ -69,12 +66,19 @@ wifi:
 
 captive_portal:
 
-# Encrypted ESPHome native API. ZHA + aioesphomeapi handle the noise
-# handshake transparently; serial_proxy rides this transport, no second
-# listener needed.
+mdns:
+  services:
+    - service: "_serial"
+      protocol: "_tcp"
+      port: 6638
+      txt:
+        protocol: "ezsp"
+        radio: "zigbee_ncp"
+
+# api: enabled (no encryption — keeps it compatible if HA's ESPHome
+# integration wants to pick up diagnostic sensors. ZHA talks to the radio
+# via stream_server below, not the native API.)
 api:
-  encryption:
-    key: !secret api_encryption_key
 
 logger:
   level: INFO
@@ -91,10 +95,10 @@ uart:
   baud_rate: 460800
   rx_buffer_size: 2048
 
-serial_proxy:
+# Raw TCP UART proxy on port 6638. ZHA connects via socket://<host>:6638.
+stream_server:
   uart_id: mg24_uart
-  name: "MG24 Zigbee NCP"
-  port_type: TTL
+  port: 6638
 
 # EFR32 reset + bootloader pins exposed as outputs for OTA / firmware swaps.
 output:

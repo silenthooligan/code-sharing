@@ -1,31 +1,57 @@
-# Home Assistant Connect ZBT-2 — Portable Zigbee (community)
+# Home Assistant Connect ZBT-2 - Portable Zigbee (community)
 
 Custom WiFi-portable firmware for the ZBT-2 ESP32-S3 USB controller in
 Zigbee role. Mirrors the official ZWA-2 portable approach for the ZBT-2
 hardware, which Nabu Casa hasn't shipped portable firmware for yet.
 
-The EFR32MG24 stays on its factory **Zigbee NCP** firmware — no
-SiLabs-side reflash needed for the Zigbee role. The ESP32-S3 runs
-ESPHome with [`oxan/esphome-stream-server`](https://github.com/oxan/esphome-stream-server)
-which exposes the EFR32 UART as raw TCP on port 6638. ZHA connects
-via `socket://<host>:6638`.
+The EFR32MG24 stays on its factory **Zigbee NCP** firmware. No SiLabs-side
+reflash needed for the Zigbee role. The ESP32-S3 runs ESPHome with
+[`serial_proxy`](https://esphome.io/components/serial_proxy/) (2026.3.0+),
+which transports the EFR32 UART inside the encrypted ESPHome native API
+on port 6053. ZHA reaches the radio via:
+
+```
+esphome-hass://esphome/<esphome_config_entry_id>?port_name=MG24%20Zigbee%20NCP
+```
+
+HA 2026.5+ enumerates the proxy in ZHA's serial-port picker; older HA
+releases that lack the `esphome-hass://` URL handler should use the
+[`legacy-stream-server/`](legacy-stream-server/) variant instead.
 
 **Verified end-to-end:** ZHA forms a fresh mesh on this dongle, IAS-Zone
-battery-powered end devices (water-leak sensors) and mains-powered
-routers (Zigbee repeaters) join via permit-join, the device interview
-completes, and ongoing attribute reports (battery %, temperature,
-moisture state) flow into HA without dropping the TCP socket. Sustained
-operation across HA restarts and dongle reboots; `socket://` reconnects
-cleanly.
+battery-powered end devices (water-leak sensors) and mains-powered routers
+(Zigbee repeaters) join via permit-join, the device interview completes,
+and ongoing attribute reports (battery %, temperature, moisture state)
+flow into HA. Validated against HA 2026.5.0b2 and a vendored bellows
+patch (see "Status & dependencies" below).
 
-> **Note on `serial_proxy` vs `stream_server`:** ESPHome 2026.3.0 added
-> `serial_proxy` (encrypted ESPHome native API) which is the *prettier*
-> path on paper — but as of HA 2026.4.x the auto-discovery glue from
-> `serial_proxy` to ZHA isn't firing, and ZHA's manual flow only
-> accepts `socket://`-style URLs. `stream_server` exposes the UART as
-> plain TCP, which ZHA accepts directly. We pick the path that ships
-> today; expect this to switch back to `serial_proxy` once the upstream
-> discovery glue lands.
+## Status & dependencies
+
+Two upstream gates determine whether this works on a stock HA install:
+
+1. **Home Assistant >= 2026.5.** Adds `homeassistant/components/esphome/serial_proxy.py`
+   (the `esphome-hass://` URL handler that registers with `serialx`) and
+   the ZHA serial-port picker. Earlier HA versions can't consume a
+   `serial_proxy` stream and need the [`legacy-stream-server/`](legacy-stream-server/)
+   variant.
+2. **Patched bellows.** Stock `bellows==0.49.1` (what HA 2026.5.0b2 ships)
+   breaks on the Python 3.14 + EZSP-over-TCP combo with symptoms like
+   `'NoneType' object can't be awaited`, `Attempted to use a closed event
+   loop`, dropped reset frames during NCP startup, and indefinite ZHA
+   retry loops. Tracked at [zigpy/bellows#720](https://github.com/zigpy/bellows/pull/720).
+   Until that merges and reaches a HA release, vendor the patched bellows
+   into your HA image:
+   ```dockerfile
+   ARG HA_TAG=2026.5.0b2
+   FROM ghcr.io/home-assistant/home-assistant:${HA_TAG}
+   RUN pip install --no-deps --force-reinstall \
+       https://github.com/silenthooligan/bellows/archive/refs/heads/fix/python-3.14-ezsp-tcp.tar.gz
+   ```
+
+If you're on HA <= 2026.4 (no `esphome-hass://`), use the
+[`legacy-stream-server/`](legacy-stream-server/) variant. It bypasses both
+gates by exposing raw TCP on a separate listener, which ZHA accepts via
+`socket://` directly.
 
 ## Bring-up
 
@@ -40,11 +66,11 @@ pipx inject esptool pyserial
 
 # 2. Configure
 cp ../secrets.yaml.example secrets.yaml
-$EDITOR secrets.yaml
+$EDITOR secrets.yaml      # set wifi_ssid/password, api_encryption_key, ota_password
 
 # 3. Compile + flash
 esphome compile zbt-2-zigbee.yaml
-cd .esphome/build/zbt-2-zigbee/.pioenvs/zbt-2-zigbee
+cd .esphome/build/home-assistant-zbt-2-zigbee/.pioenvs/home-assistant-zbt-2-zigbee
 esptool --port /dev/ttyACM0 --chip esp32s3 \
     --before usb-reset --after hard-reset --baud 460800 \
     write-flash -z --flash-size detect \
@@ -54,13 +80,18 @@ esptool --port /dev/ttyACM0 --chip esp32s3 \
     0x10000 firmware.bin
 ```
 
-After hard-reset the dongle joins WiFi within ~10s, exposes raw TCP
-on port 6638, and announces via mDNS. Subsequent updates go OTA via
-`esphome run zbt-2-zigbee.yaml --device <hostname>.local`.
+After hard-reset the dongle joins WiFi within ~10s and announces over
+mDNS. Subsequent updates go OTA via `esphome run zbt-2-zigbee.yaml
+--device <hostname>.local`.
+
+> Tip: `esphome upload <yaml>` does NOT recompile; it flashes whatever's
+> in `.esphome/build/<name>/.pioenvs/<name>/firmware.bin`. Two YAMLs that
+> share the same `esphome.name:` will fight over the build dir. Use
+> `esphome run` (always recompiles) when switching between sibling YAMLs.
 
 ## Optional: refresh the EFR32 Zigbee firmware
 
-ZBT-2s ship with Zigbee NCP — keep it. To bump to the latest:
+ZBT-2s ship with Zigbee NCP. To bump to the latest:
 
 ```bash
 wget https://github.com/NabuCasa/silabs-firmware-builder/releases/download/v2026.02.23/zbt2_zigbee_ncp_7.5.1.0_None.gbl
@@ -75,48 +106,61 @@ has the stock USB-CDC bridge firmware which exposes the EFR32 directly).
 
 ## Wiring into Home Assistant
 
-1. **(Optional but recommended) Settings → Devices & Services → Add
-   Integration → ESPHome.** Enter the device hostname or IP. This
-   surfaces diagnostic sensors (WiFi signal, IP address) under the
-   ESPHome integration. The ZHA path is independent.
+1. **Settings -> Devices & Services -> Add Integration -> ESPHome.**
+   Enter the device hostname or IP. Provide the `api_encryption_key` from
+   your `secrets.yaml`. Capture the resulting config entry's `entry_id`
+   (visible in `.storage/core.config_entries`, or via the websocket
+   `config/config_entries/get_entries` call) for step 2's manual URL
+   form. The integration also surfaces diagnostic sensors (WiFi signal,
+   IP address).
 
-2. **Settings → Devices & Services → Add Integration → ZHA → Manually
-   enter your settings:**
+2. **Settings -> Devices & Services -> Add Integration -> ZHA.**
+
+   On HA 2026.5+, the ESPHome serial proxy named "MG24 Zigbee NCP"
+   appears in the serial-port picker; just select it.
+
+   On older HA (with the bellows patch from "Status & dependencies"),
+   use manual entry:
    - Radio type: **EZSP** (Silicon Labs EmberZNet)
-   - Serial port: `socket://<device-ip>:6638`
+   - Serial port: `esphome-hass://esphome/<esphome_entry_id>?port_name=MG24%20Zigbee%20NCP`
    - Baudrate: `460800`
    - Flow control: `software`
 
-   ZHA forms a fresh Zigbee network. (You're not migrating an existing
-   network — Zigbee re-pair is per-device.)
+   ZHA forms a fresh Zigbee network on first add. (You're not migrating
+   an existing network. Zigbee re-pair is per-device.)
 
-3. **Add Zigbee devices** via ZHA's add-device UI. Each device's
-   pairing gesture varies (button-hold, magnet swipe, paddle taps).
+3. **Add Zigbee devices** via ZHA's add-device UI. Each device's pairing
+   gesture varies (button-hold, magnet swipe, paddle taps).
+
+## Migrating from the legacy `stream_server` variant
+
+If you started with [`legacy-stream-server/zbt-2-zigbee.yaml`](legacy-stream-server/zbt-2-zigbee.yaml)
+and want to swap to `serial_proxy` without re-pairing devices:
+
+1. OTA-flash the new YAML over the existing dongle (same `esphome.name:`
+   so it's a drop-in firmware swap on the same device).
+2. The new firmware boots with the encrypted API enabled. HA's existing
+   ESPHome integration entry needs the `api_encryption_key` set: trigger
+   its **Reconfigure** flow and enter the key. Otherwise the integration
+   stays in `state: loaded` but with unavailable entities, and ZHA hits
+   `cannot_connect` against the proxy.
+3. Delete the existing ZHA config entry and create a new one with the
+   `esphome-hass://` URL. ZHA does NOT support reconfiguring the radio
+   path in-place (`supports_reconfigure: false`). On the new entry's
+   setup-strategy step, use **Advanced -> Reuse settings**, NOT
+   "Recommended" (which would form a fresh network and force re-pair).
+   With "Reuse settings", the existing `zigbee.db` is honored and devices
+   auto-rejoin within ~30s.
 
 ## Hardware reference
 
 | ESP32-S3 GPIO | EFR32MG24 pin | Function |
 |---|---|---|
-| 14 | UART RX | UART TX (host → radio) |
-| 13 | UART TX | UART RX (host ← radio) |
+| 14 | UART RX | UART TX (host -> radio) |
+| 13 | UART TX | UART RX (host <- radio) |
 | 4  | RESETn  | Radio reset (active LOW, open-drain) |
 | 10 | PA6     | Radio bootloader trigger (active LOW) |
 
 UART runs at **460,800 baud, 8N1**.
 
 Pinout source: [`NabuCasa/zwave-esp-bridge` branch `puddly/zbt2-final`](https://github.com/NabuCasa/zwave-esp-bridge/tree/puddly/zbt2-final).
-
-## Why no encryption?
-
-`stream_server` is a separate, plain-TCP listener that doesn't go
-through ESPHome's encrypted native API. Raw TCP on `:6638` is ZHA's
-only entry point; encryption would need to be configured in socat /
-ZHA / zigpy.
-
-This is fine in practice if your IoT VLAN is firewalled (only your HA
-host can reach `:6638`), which is good hygiene for IoT anyway.
-
-The ESPHome `api:` block stays enabled (no encryption) so HA's ESPHome
-integration can still discover the diagnostic sensors. The two
-listeners are independent: ESPHome native API on `:6053`, raw Zigbee
-UART on `:6638`.

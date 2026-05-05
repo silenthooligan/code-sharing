@@ -10,7 +10,7 @@ OpenThread Border Router) needed to make them useful in a Home Assistant
 | Dongle | Role | Upstream availability | This repo |
 |---|---|---|---|
 | **ZWA-2** | Z-Wave 800 controller | ✅ Official: [`esphome/zwa-2`](https://github.com/esphome/zwa-2) | Variant with two production-tested deltas (encryption-off for Z-Wave JS compat, MAC-suffixed name). Uses official `zwave_proxy`; Z-Wave JS speaks `esphome://` natively. |
-| **ZBT-2** | Zigbee NCP | ❌ Not yet shipped by Nabu Casa | ESPHome `stream_server` (raw TCP on :6638). ZHA connects via `socket://<host>:6638`. |
+| **ZBT-2** | Zigbee NCP | ❌ Not yet shipped by Nabu Casa | ESPHome `serial_proxy` (encrypted native API on :6053). ZHA connects via `esphome-hass://esphome/<entry_id>?port_name=MG24%20Zigbee%20NCP`. **Requires HA >= 2026.5 and the bellows patch in [zigpy/bellows#720](https://github.com/zigpy/bellows/pull/720)**; pre-2026.5 fallback in [`legacy-stream-server/`](zbt-2-zigbee/legacy-stream-server/). |
 | **ZBT-2** | Thread / OTBR | ❌ Not yet shipped by Nabu Casa | ESPHome `stream_server` (raw TCP on :6638) → bridged to OTBR via `socat` (built into the ownbee image). |
 
 **This is a stop-gap.** If Nabu Casa ships official portable firmware for
@@ -22,9 +22,14 @@ deployment:
 - **Z-Wave (ZWA-2):** devices included via S2 Authenticated, control +
   state round-trips through Z-Wave JS over `esphome://`.
 - **Zigbee (ZBT-2):** ZHA forms its mesh against the dongle over
-  `socket://<host>:6638`; battery-powered IAS-Zone end devices (water
-  leak sensors) and mains-powered routers join, report attributes
-  (battery %, temperature, moisture state), and trigger HA automations.
+  `esphome-hass://esphome/<entry_id>?port_name=MG24%20Zigbee%20NCP`
+  (HA 2026.5+ with the bellows patch from
+  [zigpy/bellows#720](https://github.com/zigpy/bellows/pull/720)).
+  Battery-powered IAS-Zone end devices (water leak sensors) and
+  mains-powered routers join, report attributes (battery %, temperature,
+  moisture state), and trigger HA automations. Pre-2026.5 / pre-bellows-fix
+  systems can use the raw-TCP `stream_server` fallback under
+  [`zbt-2-zigbee/legacy-stream-server/`](zbt-2-zigbee/legacy-stream-server/).
 - **Thread (ZBT-2):** HA's OTBR joins an existing Thread mesh as a
   secondary border router (or forms a new one) and routes Matter traffic
   to existing nodes; mainline OTBR's `socat`-bridged pty is stable
@@ -43,7 +48,8 @@ ha-connect-portable/
 │   └── zwa-2.yaml                    # ESPHome config (zwave_proxy, no encryption)
 ├── zbt-2-zigbee/
 │   ├── README.md                     # Zigbee role bring-up + ZHA wiring
-│   └── zbt-2-zigbee.yaml             # ESPHome config (stream_server, raw TCP)
+│   ├── zbt-2-zigbee.yaml             # ESPHome config (serial_proxy, encrypted native API)
+│   └── legacy-stream-server/         # Pre-2026.5 / pre-bellows-fix fallback (raw TCP)
 ├── zbt-2-thread/
 │   ├── README.md                     # Thread/OTBR bring-up + sidecar wiring
 │   └── zbt-2-thread.yaml             # ESPHome config (stream_server, raw TCP)
@@ -65,27 +71,28 @@ The right ESPHome component to use depends on what speaks to the radio:
 | Component | Transport | Used by |
 |---|---|---|
 | **`zwave_proxy`** (official) | ESPHome native API (encrypted optional) | Z-Wave JS server's `esphome://` URL handler (zwave-js v15.15.0+) |
-| **`serial_proxy`** (official, 2026.3.0+) | ESPHome native API (encrypted optional) | Future: ZHA's serial_proxy adapter once HA's auto-discovery glue lands. *Not used in this repo's current YAMLs* — ZHA's manual flow only takes `socket://` URLs in HA 2026.4.x. |
-| **`stream_server`** ([oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server)) | Raw TCP on a port | Both ZBT-2 roles in this repo — Zigbee (ZHA via `socket://`) and Thread (OTBR via socat-bridged pty). |
+| **`serial_proxy`** (official, 2026.3.0+) | ESPHome native API (encryption recommended) | ZBT-2 Zigbee role in this repo. ZHA reaches it via `esphome-hass://` (HA's `homeassistant/components/esphome/serial_proxy.py`, 2026.5+). |
+| **`stream_server`** ([oxan/esphome-stream-server](https://github.com/oxan/esphome-stream-server)) | Raw TCP on a port | ZBT-2 Thread role (OTBR via socat-bridged pty). Also kept as the pre-2026.5 / pre-bellows-patch fallback for the Zigbee role under [`zbt-2-zigbee/legacy-stream-server/`](zbt-2-zigbee/legacy-stream-server/). |
 
 ```
 HA Container host
-┌──────────────────────────────────────────────────────────────────┐
-│  homeassistant   matter-server   zwave-js-server   otbr           │
-│        │              │                │             │            │
-│        │              │     esphome:// │             │ HTTP :8081 │
-│        │ socket://    │ ─────────────► │             │            │
-│        │ :6638 (ZHA)  │                │ ─────► ZWA-2│ socat-otbr │
-│        │              │                │             │ -tcp ─────┐│
-└────────┼──────────────┼────────────────┼─────────────┼───────────┘│
-         │ socket://    │                │             │ TCP :6638  │
-         │ <ip>:6638    │                │             │            │
-         ▼              ▼                ▼             ▼            ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│  homeassistant   matter-server   zwave-js-server   otbr               │
+│        │              │                │             │                │
+│        │              │     esphome:// │             │ HTTP :8081     │
+│        │ esphome-hass:│ ─────────────► │             │                │
+│        │ // (ZHA)     │                │ ─────► ZWA-2│ socat-otbr     │
+│        │              │                │             │ -tcp ─────────┐│
+└────────┼──────────────┼────────────────┼─────────────┼───────────────┘│
+         │ TCP :6053    │                │             │ TCP :6638      │
+         │ (encrypted   │                │             │ (raw)          │
+         │  native API) │                │             │                │
+         ▼              ▼                ▼             ▼                ▼
   ┌──────────────┐  (zigpy native    ┌──────────┐   ┌──────────────┐
   │ ZBT-2        │   socket          │ ZWA-2    │   │ ZBT-2        │
   │ ESPHome      │   client)         │ ESPHome  │   │ ESPHome      │
-  │ stream_      │                   │ zwave_   │   │ stream_      │
-  │ server       │                   │ proxy    │   │ server       │
+  │ serial_      │                   │ zwave_   │   │ stream_      │
+  │ proxy        │                   │ proxy    │   │ server       │
   └──────┬───────┘                   └────┬─────┘   └──────┬───────┘
          │ UART 460800                    │ UART 115200    │ UART 460800
          ▼                                ▼                ▼
@@ -93,10 +100,12 @@ HA Container host
    Zigbee NCP                         Z-Wave 800     OpenThread RCP
 ```
 
-Both ZBT-2 roles use raw TCP (`stream_server` :6638) on the dongle
-side; only the EFR32 firmware variant differs. The ZWA-2 keeps the
-official `zwave_proxy` because Z-Wave JS speaks `esphome://`
-natively — no TCP intermediary needed there.
+Both ZBT-2 roles share the same hardware; only the EFR32 firmware variant
+and the ESP32-S3 transport choice differ. The ZBT-2 Zigbee role and the
+ZWA-2 both ride the encrypted ESPHome native API (`serial_proxy` and
+`zwave_proxy` respectively). The ZBT-2 Thread role keeps `stream_server`
+because mainline OTBR's RADIO_URL parser only speaks `spinel+hdlc+uart://`
+and has no `esphome://` driver to consume the proxy stream.
 
 ## Quick start
 
@@ -180,7 +189,7 @@ For HA Container deployments (no HassOS), each role has a sidecar:
 | Role | Container | Talks to dongle via |
 |---|---|---|
 | Z-Wave (ZWA-2) | [`ghcr.io/kpine/zwave-js-server`](https://github.com/kpine/zwave-js-server-docker) | `esphome://<host>` (built-in zwave-js v15.15.0+ driver) |
-| Zigbee (ZBT-2) | *(none — ZHA built into HA)* | `socket://<host>:6638` (raw TCP from `stream_server`) |
+| Zigbee (ZBT-2) | *(none — ZHA built into HA)* | `esphome-hass://esphome/<entry_id>?port_name=MG24%20Zigbee%20NCP` (encrypted native API via HA's esphome integration). Legacy raw-TCP path: `socket://<host>:6638` from `stream_server`. |
 | Thread (ZBT-2) | [`ghcr.io/ownbee/hass-otbr-docker`](https://github.com/ownbee/hass-otbr-docker) | `NETWORK_DEVICE=<host>:6638` → built-in `socat-otbr-tcp` → `/tmp/ttyOTBR` |
 
 See [`compose-examples/`](compose-examples/) for ready-to-use snippets.
