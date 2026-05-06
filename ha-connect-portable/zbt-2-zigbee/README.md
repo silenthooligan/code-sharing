@@ -19,11 +19,10 @@ releases that lack the `esphome-hass://` URL handler should use the
 [`legacy-stream-server/`](legacy-stream-server/) variant instead.
 
 **Verified end-to-end:** ZHA forms a fresh mesh on this dongle, IAS-Zone
-battery-powered end devices (water-leak sensors) and mains-powered routers
-(Zigbee repeaters) join via permit-join, the device interview completes,
-and ongoing attribute reports (battery %, temperature, moisture state)
-flow into HA. Validated against HA 2026.5.0b2 and a vendored bellows
-patch (see "Status & dependencies" below).
+battery-powered end devices and mains-powered routers join via
+permit-join, the device interview completes, and ongoing attribute
+reports flow into HA. Validated against HA 2026.5.0b2 and a vendored
+bellows patch (see "Status & dependencies" below).
 
 ## Status & dependencies
 
