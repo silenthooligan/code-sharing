@@ -1,95 +1,157 @@
-# 📖 FlipHTML5 Liberator
+# fliphtml5-liberator
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue.svg) ![License](https://img.shields.io/badge/license-MIT-green.svg) ![Python](https://img.shields.io/badge/python-3.7%2B-blue.svg) ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)
+Command-line extractor for FlipHTML5 books. Resolves the page manifest,
+downloads page images at the highest available resolution, and
+assembles them into a single PDF.
 
-> **The Universal FlipHTML5 Downloader**. Break through "Protected" books, decode WASM encryption, and generate high-quality PDFs.
+FlipHTML5 publishes books as JavaScript-driven flipbook viewers backed
+by a `config.js` file that lists the pages. Recent / "Protected"
+deployments obfuscate that page list with an Emscripten-compiled
+WebAssembly binary (`deString.wasm`) loaded by `deString.js`. This tool
+handles both layouts.
 
----
+## Capabilities
 
-## 🚀 Why This Tool?
+| Capability | Status |
+|---|---|
+| Plain `config.js` (page list exposed in source) | ✅ Direct extraction, no Node.js needed |
+| Encrypted / "Protected" `config.js` (WASM-decoded) | ✅ Via host-environment polyfill in Node.js |
+| Nested encryption (page list itself an encrypted blob) | ✅ Recursive WASM decode |
+| Hashed image filenames (`/files/large/<hash>.webp`) | ✅ Resolved from manifest |
+| Concurrent page downloads | ✅ `httpx.AsyncClient` + `asyncio.gather` |
+| WebP and JPEG inputs | ✅ Auto-detected; WebP converted via Pillow before PDF assembly |
+| PDF output | ✅ Single `book.pdf` via `img2pdf` |
 
-Typical downloaders fail when they encounter FlipHTML5's "Protected" mode or newer "Encrypted Config" books. These books hide their page structure inside obfuscated code or encrypted blobs that require a specific WebAssembly (WASM) binary to decode.
+## How extraction works
 
-**FlipHTML5 Liberator** uses a **Hybrid Decoder Architecture** to bypass these restrictions. It runs a local Node.js environment patched with the original `deString.js` and `deString.wasm` binaries to essentially "trick" the configuration into revealing itself.
+The downloader runs in two stages.
 
-### ✨ Features
+### Stage 1: Manifest extraction
 
-*   **🔓 Decrypts "Protected" Books**: Handles books that lock down the UI and obscure source files.
-*   **🧠 WASM-Based Decoding**: seamless integration with the original `deString.wasm` binary for 100% accurate decryption.
-*   **🕸️ Nested Encryption Handling**: Detects and recursively decodes page lists hidden inside *double-encrypted* strings.
-*   **🔗 Hashed Path Resolution**: Solves the puzzle of non-sequential, hashed image filenames (e.g., `afbd9e...webp`).
-*   **🖼️ High-Fidelity Output**: Downloads the highest resolution (`/files/large/`) images available.
-*   **📄 PDF Generation**: Automatically combines downloaded pages into a single `book.pdf`.
+Fetches `https://online.fliphtml5.com/<book_id>/javascript/config.js`
+(falling back to `/config.js`) and tries the plain-text path first:
 
----
+1. **Plain path.** Regex search for the `fliphtml5_pages = [...]`
+   assignment. If present, the JavaScript object literal is normalized
+   to JSON and parsed directly. No subprocess required.
+2. **WASM path.** If the page list is absent or stored as an encrypted
+   string, the script spawns `node fliphtml5_decoder.js <config_path>`
+   and reads the decrypted manifest from stdout.
 
-## 🛠️ Installation
+The Node.js helper performs the decryption inside a host-environment
+polyfill so the original WASM binary runs unmodified:
 
-### Prerequisites
+- Loads `deString.wasm` as a binary buffer.
+- Patches `deString.js` to remove the inlined data URI loader and
+  replaces the `Module.onRuntimeInitialized` callback so initialization
+  resolves a Promise.
+- Reimplements `stringToUTF8` and `UTF8ToString` against the WASM heap
+  because the upstream exports are typically stripped or mangled.
+- Evaluates the original `config.js` to materialize whatever `bookConfig`
+  / `htmlConfig` globals it defines.
+- Calls the exported `_DeString()` to decrypt `bookConfig` and the
+  `fliphtml5_pages` string.
+- Detects nested encryption (decoded payload starting with the `v`
+  signature) and re-runs `_DeString()` until the result parses as JSON.
 
-1.  **Python 3.7+**: [Download Python](https://www.python.org/)
-2.  **Node.js**: [Download Node.js](https://nodejs.org/) (Required for the decryption engine)
-3.  **WASM Binaries**: You will need to "borrow" `deString.js` and `deString.wasm` from the target book (instructions below).
+The decrypted manifest is written to stdout and consumed by Python.
 
-### Getting Started
+### Stage 2: Page download and PDF assembly
 
-1.  **Clone the Repo** (or download the scripts):
-    ```bash
-    git clone https://github.com/silenthooligan/fliphtml5-liberator.git
-    cd fliphtml5-liberator
-    ```
+For each page entry in the manifest, the script resolves an image URL
+using the entry's `l` (link) or `n` (number) field:
 
-2.  **Install Python Dependencies**:
-    ```bash
-    pip install httpx img2pdf Pillow
-    ```
+- Absolute URLs are used as-is.
+- Paths starting with `files/` are prefixed with
+  `http://online.fliphtml5.com/<book_id>/`.
+- Bare hash-style filenames are placed under
+  `http://online.fliphtml5.com/<book_id>/files/large/<filename>`, which
+  is the highest-resolution variant FlipHTML5 publishes.
 
----
+Pages are downloaded concurrently with a 15-second per-request timeout
+via `httpx.AsyncClient`. Failed pages are logged as warnings and
+skipped (the resulting PDF will be missing those pages rather than
+aborting the entire run). WebP responses are converted to PNG with
+Pillow before `img2pdf.convert()` writes `book.pdf`.
 
-## 📖 Usage
+## Prerequisites
 
-### 1. Acquire the Keys 🔑
-To decode the book, you need the "key" (the WASM files).
+- **Python 3.7+**
+- **Node.js** (any recent LTS) for the WASM decoder path. Not required
+  if every book you process exposes its page list in plain `config.js`.
+- **`deString.js` and `deString.wasm`** from the target book, placed in
+  the project root. These are not bundled because they are the book
+  publisher's binaries and may vary between FlipHTML5 deployments.
 
-1.  Open the target FlipHTML5 book in your web browser.
-2.  Open **Developer Tools** (F12 or Right Click -> Inspect).
-3.  Go to the **Network** tab.
-4.  Refresh the page.
-5.  Filter for `deString`.
-6.  Right-click and **Download/Save** both `deString.js` and `deString.wasm`.
-7.  Place them in the root folder of this project.
+### Acquiring `deString.js` and `deString.wasm`
 
-### 2. Run the Liberator ⚡
-Run the python script with the URL of the book you want to download.
+1. Open the target book in a browser.
+2. Open DevTools (F12) and switch to the **Network** tab.
+3. Reload the page.
+4. Filter requests for `deString`.
+5. Right-click each of `deString.js` and `deString.wasm` and save them
+   into the `fliphtml5-liberator/` directory next to `downloader.py`.
+
+The same pair generally works across books published by the same
+FlipHTML5 account version. If decoding fails on a new book, refresh
+the binaries from that book's network trace.
+
+## Installation
+
+```bash
+git clone https://github.com/silenthooligan/code-sharing.git
+cd code-sharing/fliphtml5-liberator
+
+pip install httpx img2pdf Pillow
+```
+
+There is no `requirements.txt`; the dependency surface is small and
+stable. Pin manually if reproducibility matters to you.
+
+## Usage
+
+```bash
+python downloader.py <book_url_or_id>
+```
+
+Either a full URL or just the `<account>/<book>` ID portion is
+accepted:
 
 ```bash
 python downloader.py https://online.fliphtml5.com/ousx/stby
+python downloader.py ousx/stby
 ```
 
-**What happens next:**
-1.  The script fetches the obfuscated `config.js` from the server.
-2.  It launches `fliphtml5_decoder.js` in a subprocess.
-3.  The Node.js script patches the `deString` loader, injects polyfills, and runs the WASM decryption.
-4.  The decrypted JSON is piped back to Python.
-5.  Images are downloaded concurrently.
-6.  **`book.pdf`** is generated!
+Output goes to `book.pdf` in the current working directory.
+Intermediate image files are written to a temp directory that is
+cleaned up on exit. Logs go to stdout in `LEVELNAME: message` format.
 
----
+## Operational notes
 
-## 🧐 How It Works (The Technical Part)
+- **Output filename is hardcoded.** Each run overwrites `book.pdf` in
+  the current directory. Run from a per-book working directory or
+  rename after each invocation.
+- **Non-ASCII `config.js`.** Some books ship `config.js` with
+  non-ASCII bytes (often book metadata in CJK or accented Latin). The
+  downloader reads with `errors='replace'` so this no longer aborts
+  with `UnicodeDecodeError`; the regex matchers operate on the
+  replaced text and find the page-list assignment unchanged.
+- **WASM path is skipped automatically** when the plain page list is
+  present, avoiding subprocess overhead for the common case.
+- **Hashed filenames may 404** if the book uses a non-standard storage
+  layout. The warning is logged and the page is skipped; inspect the
+  manifest entry to see whether the `l` field contains a usable
+  fallback path.
+- **Concurrency is unbounded.** `asyncio.gather` issues all page
+  requests in parallel. For large books on slow links, consider
+  patching `download_image` to use a `Semaphore`.
 
-This tool solves the "black box" problem of WASM obfuscation by implementing a **Host Environment Polyfill**.
+## Disclaimer
 
-1.  **Emscripten Patching**: The original `deString.js` is generated by Emscripten and relies on browser-specific globals (`window`, `Module.onRuntimeInitialized`). We patch these out regex-style to run in a headless Node.js environment.
-2.  **Memory Management**: We manually implement `stringToUTF8` and `UTF8ToString` to bridge the gap between JavaScript strings and the WASM heap, as the original exports are often stripped or mangled.
-3.  **Recursive Decryption**: Some books use layers of encryption. The script detects if the decoded output contains *another* encrypted block (starting with signature `v...`) and recursively passes it back through the WASM decoder.
+For educational and personal-archival use only. Respect the copyright
+and terms of service of any content you process. Do not redistribute
+copyrighted material without permission from the rights holder.
 
----
+## License
 
-## ⚠️ Disclaimer
-
-This tool is for **educational and archival purposes only**. Please respect copyright laws and the terms of service of the content providers. Do not use this tool to distribute copyrighted material without permission.
-
----
-
-**Happy Reading!** 📚
+[MIT](../LICENSE).

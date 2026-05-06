@@ -1,62 +1,98 @@
-# 🧠 The Code Vault
+# code-sharing
 
-![Ideas](https://img.shields.io/badge/ideas-infinite-blueviolet.svg) ![Status](https://img.shields.io/badge/status-active-success.svg) ![License](https://img.shields.io/badge/license-MIT-green.svg) [![GitHub](https://img.shields.io/badge/GitHub-silenthooligan%2Fcode--sharing-black?logo=github)](https://github.com/silenthooligan/code-sharing)
+Personal repository of small standalone tools, reverse-engineering
+utilities, and integration scripts. Each top-level directory is an
+independent project with its own README, dependencies, and license
+terms (project-level licenses inherit MIT from this repo unless
+otherwise noted).
 
-> **A collection of reverse engineering tools, automation scripts, and digital experiments.**
+This is a workshop, not a product portfolio. Projects are published
+because they were useful enough to write down and may be useful to
+someone else; they are not a service offering.
 
-Welcome to my digital workbench. This repository is a home for code that solves interesting problems, breaks through "impossible" barriers, or just makes life a little bit easier. From reverse-engineering obscure file formats to automating mundane tasks, this is where the magic happens.
+## Projects
 
----
+### [ha-connect-portable](./ha-connect-portable)
 
-## 🌟 Featured Projects
+ESPHome firmware images and reference compose configurations for the
+Nabu Casa ZWA-2 and ZBT-2 USB radio dongles. Replaces the stock
+USB-CDC bridge on the on-board ESP32-S3 with an ESPHome image so the
+radio runs on Wi-Fi instead of being tethered to the Home Assistant
+host's USB bus.
 
-### [🛰️ Home Assistant Connect — Portable WiFi Firmware (ZWA-2 + ZBT-2)](./ha-connect-portable)
-**Take both Nabu Casa dongles off USB.**
-WiFi-portable ESPHome firmware for the ZWA-2 (Z-Wave) and ZBT-2 (Zigbee + Thread/OTBR), plus full HA Container sidecar wiring (zwave-js-server, OpenThread Border Router via socat-bridged TCP). Mirrors the [official ZWA-2 portable firmware](https://github.com/esphome/zwa-2) and adds the same pattern for the ZBT-2 hardware, which Nabu Casa hasn't officially published yet.
-*   **Tech Stack**: ESPHome (`zwave_proxy`, `serial_proxy`, `stream_server`), esptool, universal-silabs-flasher, kpine/zwave-js-server, ownbee/hass-otbr-docker.
-*   **Key Features**: CLI bootloader-entry via the magic-baudrate `cmd>` trick (no browser required); ready-to-drop docker-compose snippets for the sidecars; full-stack reference example.
+Covers all three radio roles: Z-Wave (ZWA-2 via `zwave_proxy`), Zigbee
+(ZBT-2 via `serial_proxy`), and Thread / OTBR (ZBT-2 via
+`stream_server` plus `socat`-bridged pty). Includes the magic-baudrate
+ROM-bootloader entry helper, EFR32 reflash procedure for the Thread
+role, and ready-to-deploy compose snippets for `zwave-js-server` and
+`hass-otbr-docker`.
 
-### [📖 FlipHTML5 Liberator](./fliphtml5-liberator)
-**Break through the "Protected" wall.**
-A robust tool designed to decrypt and download FlipHTML5 books, even those protected by complex WebAssembly (WASM) encryption and nested obfuscation.
-*   **Tech Stack**: Python, Node.js, WASM Reverse Engineering.
-*   **Key Feature**: Hybrid decoding architecture that patches Emscripten binaries on the fly.
+Status: production-validated. Targets Home Assistant Container
+deployments (no HassOS required).
 
-### [📡 Cyberdrop-DL + YT-DLP GUI](./cyberdrop-dl-gui)
-**The Visual Downloader.**
-A modern, web-based graphical interface that wraps **both** `cyberdrop-dl` (forums/albums/file hosts) and `yt-dlp` (video sites), with auto-routing based on URL.
-*   **Tech Stack**: Python, Streamlit, Docker, ffmpeg, aria2.
-*   **Key Feature**: Dual-engine auto-detect, library-style folder picker, live log parsing.
+Stack: ESPHome (`zwave_proxy`, `serial_proxy`, `stream_server`),
+esptool, universal-silabs-flasher, kpine/zwave-js-server,
+ownbee/hass-otbr-docker.
 
----
+### [fliphtml5-liberator](./fliphtml5-liberator)
 
-## 📂 Repository Structure
+Downloader for FlipHTML5 books. Extracts page manifests and image
+assets from public FlipHTML5 deployments and assembles them into a
+single PDF.
 
-The vault is organized by project. Each folder is a self-contained world with its own documentation and requirements.
+Two operational modes: a fast path that parses the page list directly
+when `config.js` exposes it in the clear, and a fallback path that
+runs the book's own Emscripten-compiled `deString.wasm` binary inside
+a patched Node.js host environment to decrypt the page manifest. The
+WASM path handles the "Protected" / encrypted-config variant of
+FlipHTML5 where the page list is hidden inside an obfuscated string.
 
-| Project | Description | Status |
-| :--- | :--- | :--- |
-| **fliphtml5-liberator** | Universal downloader for protected FlipHTML5 books. | ✅ Stable |
-| **cyberdrop-dl-gui** | Web-based GUI for Cyberdrop-DL + YT-DLP, with auto-routing. | ✅ Stable |
-| **ha-connect-portable** | ZWA-2 + ZBT-2 over Wi-Fi for HA Container, with sidecar compose snippets. | 🧪 Experimental |
-| *(More coming soon)* | *Watch this space for new experiments.* | 🚧 Planned |
+Stack: Python 3.7+ (`httpx`, `img2pdf`, `Pillow`) for orchestration
+and PDF assembly; Node.js for the WASM decoder host environment.
 
----
+### [cyberdrop-dl-gui](./cyberdrop-dl-gui)
 
-## 💡 Philosophy
+Streamlit web UI that wraps `cyberdrop-dl-patched` and `yt-dlp` behind
+a single URL-input form. Routes each pasted URL to the appropriate
+backend automatically (yt-dlp for the listed video platforms,
+cyberdrop-dl for everything else) and persists download history per
+backend so re-runs skip already-fetched content.
 
-Code should be:
-1.  **Useful**: Solves a real problem.
-2.  **Robust**: Handles edge cases and weird errors gracefully.
-3.  **Creative**: Finds a way when the front door is locked.
+Includes a library-style folder picker that surfaces subdirectories of
+the configured download root as categories, an optional custom
+subfolder, live progress counters parsed from the backend log streams,
+and a Docker image bundling `aria2`, `ffmpeg`, `cyberdrop-dl-patched`,
+and `yt-dlp`.
 
----
+Stack: Python 3.12+, Streamlit, Docker, `cyberdrop-dl-patched`,
+`yt-dlp`, `aria2`, `ffmpeg`.
 
-## 🤝 Contributing
+## Repository structure
 
-Got a crazy idea? Found a bug in the matrix?
-Feel free to open an issue or submit a PR. I'm always looking for new challenges and collaborators.
+Each project is self-contained:
 
----
+```
+code-sharing/
+├── README.md                  # this file
+├── LICENSE                    # MIT, applies to all projects unless overridden
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md
+├── .github/                   # issue templates, PR template
+├── ha-connect-portable/       # ESPHome WiFi firmware for ZWA-2 / ZBT-2
+├── fliphtml5-liberator/       # FlipHTML5 book extractor
+└── cyberdrop-dl-gui/          # Streamlit UI for cyberdrop-dl + yt-dlp
+```
 
-*"Start by doing what's necessary; then do what's possible; and suddenly you are doing the impossible."*
+## Contributing
+
+Issues and pull requests are welcome on individual projects. See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for the basics and
+[CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md) for behavioral expectations.
+Security-sensitive reports should follow [SECURITY.md](./SECURITY.md)
+rather than going through the public issue tracker.
+
+## License
+
+[MIT](./LICENSE), unless a specific project directory ships its own
+LICENSE file overriding it.
